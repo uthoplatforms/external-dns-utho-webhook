@@ -1,12 +1,3 @@
-GO_TEST = go run gotest.tools/gotestsum --format pkgname
-
-LICENCES_IGNORE_LIST = $(shell cat licences/licences-ignore-list.txt)
-
-# ifndef $(GOPATH)
-#     GOPATH=$(shell go env GOPATH)
-#     export GOPATH
-# endif
-
 ARTIFACT_NAME = external-dns-utho-webhook
 
 REGISTRY ?= localhost:5001
@@ -28,85 +19,35 @@ show: ## Show variables
 	@echo "IMAGE_TAG: $(IMAGE_TAG)"
 	@echo "IMAGE: $(IMAGE)"
 
-
-##@ Code analysis
-
-.PHONY: vet
-vet: ## Run go vet against code.
-	go vet ./...
-
-.PHONY: lint
-lint: ## Run golangci-lint against code.
-	mkdir -p build/reports
-	go run github.com/golangci/golangci-lint/cmd/golangci-lint run --timeout 2m
-
-.PHONY: static-analysis
-static-analysis: lint vet ## Run static analysis against code.
-
-##@ GO
-
-.PHONY: clean
-clean: ## Clean the build directory
-	rm -rf ./dist
-	rm -rf ./build
-	rm -rf ./vendor
-
-.PHONY: build
-build: ## Build the binary
-	CGO_ENABLED=0 go build -o build/bin/$(ARTIFACT_NAME) ./cmd/webhook
-
 .PHONY: build-linux
 build-linux: ## Build the binary for linux
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/bin/$(ARTIFACT_NAME) ./cmd/webhook
-
-.PHONY: run
-run:build ## Run the binary on local machine
-	build/bin/external-dns-utho-webhook
-
-##@ Docker
-
-.PHONY: docker-build
-docker-build: build-linux ## Build the docker image
-	docker build ./ -f localbuild.Dockerfile -t $(IMAGE)
-
-.PHONY: docker-push
-docker-push: ## Push the docker image
-	docker push $(IMAGE)
-
-##@ Test
-
-.PHONY: unit-test
-unit-test: ## Run unit tests
-	mkdir -p build/reports
-	$(GO_TEST) --junitfile build/reports/unit-test.xml -- -race ./... -count=1 -short -cover -coverprofile build/reports/unit-test-coverage.out
-
-##@ Deploy
-.PHONY: deploy
-deploy: docker-build docker-push
-
-##@ Release
-
-.PHONY: release-check
-release-check: ## Check if the release will work
-	GITHUB_SERVER_URL=github.com GITHUB_REPOSITORY=utho/external-dns-utho-webhook REGISTRY=$(REGISTRY) IMAGE_NAME=$(IMAGE_NAME) goreleaser release --snapshot --clean --skip=publish
-
-##@ License
-
-.PHONY: license-check
-license-check: ## Run go-licenses check against code.
-	go install github.com/google/go-licenses
-	mkdir -p build/reports
-	echo "$(LICENCES_IGNORE_LIST)"
-	$(GOPATH)/bin/go-licenses check --include_tests --ignore "$(LICENCES_IGNORE_LIST)" ./...
-
-.PHONY: license-report
-license-report: ## Create licenses report against code.
-	go install github.com/google/go-licenses
-	mkdir -p build/reports/licenses
-	$(GOPATH)/bin/go-licenses report --include_tests --ignore "$(LICENCES_IGNORE_LIST)" ./... >build/reports/licenses/licenses-list.csv
-	cat licences/licenses-manual-list.csv >> build/reports/licenses/licenses-list.csv
 
 .PHONY: tidy
 tidy: 
 	go mod tidy
 	go fmt ./...
+
+
+.PHONY: deploy
+deploy: tidy build push
+
+.PHONY: build
+build:
+	@echo "building external-dns-utho-webhook with version $(VERSION)"
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o external-dns-utho-webhook ./cmd/webhook
+	@echo "building docker image to dockerhub utho with version $(VERSION)"
+	@docker build . -t utho/external-dns-utho-webhook:$(VERSION)
+
+.PHONY: push
+push:
+	@echo "building docker image to dockerhub utho with version $(VERSION)"
+	docker push utho/external-dns-utho-webhook:$(VERSION)
+
+.PHONY: build-local
+build-local: ## Build the binary
+	CGO_ENABLED=0 go build -o $(ARTIFACT_NAME) ./cmd/webhook
+
+.PHONY: run
+run:build-local ## Run the binary on local machine
+	build/bin/external-dns-utho-webhook
