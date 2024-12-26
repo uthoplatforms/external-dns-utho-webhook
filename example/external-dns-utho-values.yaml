@@ -1,0 +1,37 @@
+image:
+  registry: registry.k8s.io
+  repository: external-dns/external-dns
+  tag: v0.14.0
+
+provider: webhook
+
+extraArgs:
+  webhook-provider-url: http://localhost:8888
+  txt-prefix: reg-
+
+sidecars:
+  - name: utho-webhook
+    image: utho/external-dns-utho-webhook:0.1.2
+    ports:
+      - containerPort: 8888
+        name: webhook
+      - containerPort: 8080
+        name: http
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 10
+      timeoutSeconds: 5
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http
+      initialDelaySeconds: 10
+      timeoutSeconds: 5
+    env:
+      - name: UTHO_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: utho-credentials
+            key: api-key
